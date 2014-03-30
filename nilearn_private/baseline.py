@@ -19,10 +19,9 @@ min_acquisition_length = np.min(acquisition_lengths)
 
 movement = [mov[:min_acquisition_length] for mov in bunch.movement]
 
-# extract some trend features
-from features import trend_coef
-trend_features = np.array([trend_coef(mov, polyorder=1, axis=0).T.ravel() 
-            for mov in movement])
+# Use this movement as the baseline features. Yes it is brutal
+# and shouldn't work
+features = np.array(movement).reshape(len(movement), -1)
 
 
 # Do a simple SVM on these features
@@ -30,7 +29,7 @@ from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.cross_validation import cross_val_score, ShuffleSplit
 from sklearn.dummy import DummyClassifier
-svm = SVC(kernel="linear", C=1.)
+svm = SVC(kernel="rbf", C=1.)
 logreg = LogisticRegression(C=1.)
 
 # Watch out with cross validation!
@@ -39,15 +38,25 @@ logreg = LogisticRegression(C=1.)
 
 # We also have slightly unbalanced classes
 
-cv = ShuffleSplit(len(trend_features), n_iter=100, test_size=0.1)
+cv = ShuffleSplit(len(features), n_iter=100, test_size=0.1)
 
-scores = cross_val_score(logreg, trend_features, aut_target, cv=cv,
+scores = cross_val_score(svm, features, aut_target, cv=cv,
                          n_jobs=8)
 
 dummy_scores_1 = cross_val_score(DummyClassifier("stratified"), 
-                                 trend_features, aut_target, cv=cv, n_jobs=8)
+                                 features, aut_target, cv=cv, n_jobs=8)
 dummy_scores_2 = cross_val_score(DummyClassifier("most_frequent"), 
-                                 trend_features, aut_target, cv=cv, n_jobs=8)
+                                 features, aut_target, cv=cv, n_jobs=8)
 dummy_scores_3 = cross_val_score(DummyClassifier("uniform"), 
-                                 trend_features, aut_target, cv=cv, n_jobs=8)
+                                 features, aut_target, cv=cv, n_jobs=8)
 
+
+print "Scores using shuffle split on time courses:"
+print "%1.3f +- %1.3f" % (scores.mean(), scores.std() / np.sqrt(len(scores)))
+print "Dummy scores using different dummy strategies"
+print "%1.3f +- %1.3f" % (dummy_scores_1.mean(), 
+                          dummy_scores_1.std() / np.sqrt(len(scores)))
+print "%1.3f +- %1.3f" % (dummy_scores_2.mean(), 
+                          dummy_scores_2.std() / np.sqrt(len(scores)))
+print "%1.3f +- %1.3f" % (dummy_scores_3.mean(), 
+                          dummy_scores_3.std() / np.sqrt(len(scores)))
