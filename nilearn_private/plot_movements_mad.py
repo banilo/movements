@@ -20,6 +20,7 @@ plt.close('all')
 
 def eval_against_dumm(FS, aut_target, myclf, folder):
 	real_acc = []
+	print FS.shape
 	dummy1_acc,dummy2_acc,dummy3_acc = [], [], []
 	for train_index, test_index in folder:
 		clf = copy.deepcopy(myclf)
@@ -54,16 +55,24 @@ bunch = fetch_abide_movements()
 aut_target = bunch.pheno["DX_GROUP"]
 nparticipants = len(aut_target)
 
-FS = np.zeros((nparticipants,24))
+N_FOURIER_COEFF = 30
+
+FS = np.zeros((nparticipants, 24 + N_FOURIER_COEFF * 6))
 for i in xrange(6):
-	values = [np.mean(mov[:,i]) for mov in bunch.movement]
-	FS[:,i] = values
+	values = [np.mean(mov[:, i]) for mov in bunch.movement]
+	FS[:, i] = values
 	mins = [np.min(mov[:,i]) for mov in bunch.movement]
-	FS[:,i+6] = mins
+	FS[:, i + 6] = mins
 	maxs = [np.max(mov[:,i]) for mov in bunch.movement]
-	FS[:,i+12] = maxs
+	FS[:, i + 12] = maxs
 	stds = [np.std(mov[:,i]) for mov in bunch.movement]
-	FS[:,i+18] = stds
+	FS[:, i + 18] = stds
+	if N_FOURIER_COEFF != 0:
+		subj_coeffs = [np.fft.fft(mov[:, i]) for mov in bunch.movement]
+		subj_coeffs = np.array(subj_coeffs)
+		subj_coeffs_abs = np.abs(subj_coeffs)  # reduce complex to real numbers
+		for n in range(N_FOURIER_COEFF):
+			FS[:, i + 24 + n*6] = subj_coeffs_abs[:][0][n]
 
 inds_kids = bunch.pheno['AGE_AT_SCAN']<18.
 inds_adults = np.logical_not(inds_kids)
@@ -97,7 +106,9 @@ print "autist:non-autist = %i/%i" % (naut,nparticipants-naut)
 
 
 n_folds = 10
-myclf = Pipeline([('SS', StandardScaler()), ('LR', LogisticRegression(penalty='l1'))])
+#myclf = Pipeline([('SS', StandardScaler()), ('LR-l1', LogisticRegression(penalty='l1'))])
+myclf = Pipeline([('SS', StandardScaler()), ('LR-l2', LogisticRegression(penalty='l2'))])
+#myclf = Pipeline([('SS', StandardScaler()), ('SVC', SVC())])
 
 bar_width = .25
 n_clf = 4
@@ -202,15 +213,15 @@ for i_ana in range(14):
 		a, b, c, d = eval_against_dumm(cur_FS, cur_target, myclf, folder)
 		score_list = [a, b, c, d]
 		xlabels.append('left-handed %i%%' % (a*100))
-	elif i_ana == 13:
+	else:
 		cur_FS = FS[inds_right, :]
 		cur_target = aut_target.copy()[inds_right]
 		folder = StratifiedKFold(cur_target, n_folds=n_folds)
 		a, b, c, d = eval_against_dumm(cur_FS, cur_target, myclf, folder)
 		score_list = [a, b, c, d]
 		xlabels.append('right-handed %i%%' % (a*100))
-	else:
-		pass
+
+	#print cur_FS.shape
 
 	from scipy.stats import ttest_ind
 	sign_string = ''
@@ -237,9 +248,8 @@ for i_ana in range(14):
 	print "DUMMY3 ACCURACY MEAN: %.2f" % d
 
 	# bar plot
-	mycolors = 'ykmc'
 	mycolors = ['#002645', '#0f5765', '#568681', '#8c9d88']
-	for ii, (key, color) in enumerate(zip(['LogRegr(L1)', 'Dummy1', 'Dummy2', 'Dummy3'], mycolors)):
+	for ii, (key, color) in enumerate(zip([myclf.steps[-1][0], 'Dummy1', 'Dummy2', 'Dummy3'], mycolors)):
 		handle = plt.bar(tick_position, score_list[ii], label=key, width=bar_width, color=color)
 		tick_position += bar_width
 	tick_position += bar_width
@@ -268,7 +278,8 @@ plt.tight_layout()
 plt.show()
 #mng = plt.get_current_fig_manager()
 #mng.window.showMaximized()
-plt.savefig('autism_mov.png')
+plt.savefig('autism_mov_%s_%ifourcoeff.png' % (myclf.steps[-1][0],
+	N_FOURIER_COEFF))
 
 
 
